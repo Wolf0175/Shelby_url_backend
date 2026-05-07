@@ -1,5 +1,4 @@
-
-name: Backend CD Pipeline (Develop to Main Merge)
+name: Backend CD Pipeline (Merge to Main)
 
 on:
   push:
@@ -14,6 +13,9 @@ on:
 jobs:
   build_and_push_docker:
     runs-on: ubuntu-latest
+    # 1. SAFETY CHECK: Only run if pushed directly, or if PR was actually merged
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -31,6 +33,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          # 2. THE FIX: Telling the robot exactly where the Dockerfile hides
+          file: ./UrlShortenerService/Dockerfile
           push: true
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/aspnet-backend:${{ github.sha }}
@@ -40,8 +44,6 @@ jobs:
 
       - name: Trigger Production Deploy
         run: curl -X GET ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-        env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
 
       - name: Report Production Deployment Status
         run: echo "Backend production deployment triggered on Render and Docker image pushed to Docker Hub."
