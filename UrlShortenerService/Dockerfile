@@ -1,29 +1,28 @@
-# See https://aka.ms/customizecontainer to learn how to customize your debug container and how Visual Studio uses this Dockerfile to build your images for faster debugging.
-
-# This stage is used when running from VS in fast mode (Default for Debug configuration)
+# Stage 1: Base runtime environment
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 USER $APP_UID
 WORKDIR /app
 EXPOSE 8080
 EXPOSE 8081
 
-
-# This stage is used to build the service project
+# Stage 2: Build the project
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY ["UrlShortenerService/UrlShortenerService.csproj", "UrlShortenerService/"]
-RUN dotnet restore "./UrlShortenerService/UrlShortenerService.csproj"
+
+# Copied directly from the current folder, no messy nested paths!
+COPY ["UrlShortenerService.csproj", "./"]
+RUN dotnet restore "./UrlShortenerService.csproj"
+
 COPY . .
-WORKDIR "/src/UrlShortenerService"
 RUN dotnet build "./UrlShortenerService.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
-# This stage is used to publish the service project to be copied to the final stage
+# Stage 3: Publish the project
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./UrlShortenerService.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
-# This stage is used in production or when running from VS in regular mode (Default when not using the Debug configuration)
+# Stage 4: Final Production Image
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
