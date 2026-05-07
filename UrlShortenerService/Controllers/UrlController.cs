@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using UrlShortenerService.Data;
 using UrlShortenerService.DTOs;
 using UrlShortenerService.Models;
@@ -22,28 +23,31 @@ namespace UrlShortenerService.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            // 1. Check if we already shortened this URL to save database space
-            var existingUrl = await _context.UrlMappings.FirstOrDefaultAsync(u => u.OriginalUrl == request.Url);
-            if (existingUrl != null)
-            {
-                var existingShortUrl = $"{Request.Scheme}://{Request.Host}/{existingUrl.ShortCode}";
-                return Ok(new { shortUrl = existingShortUrl });
-            }
-
-            // 2. Generate a random 6-character short code
+            // 1. Generate a random 6-character short code
             var shortCode = GenerateShortCode(6);
 
-            // 3. Save to database
+            // 2. Prepare the new mapping
             var urlMapping = new UrlMapping
             {
                 OriginalUrl = request.Url,
-                ShortCode = shortCode
+                ShortCode = shortCode,
+                CreatedAt = DateTime.UtcNow,
+                // --- NEW CODE: Automatically set expiration to 30 days from now ---
+                ExpiredDate = DateTime.UtcNow.AddDays(30)
             };
 
+            // 3. Attach the User ID if they are logged in with a valid JWT Token
+            var userIdClaim = HttpContext.User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int loggedInUserId))
+            {
+                urlMapping.UserId = loggedInUserId;
+            }
+
+            // 4. Save to Neon PostgreSQL database
             _context.UrlMappings.Add(urlMapping);
             await _context.SaveChangesAsync();
 
-            // 4. Return the new shortened URL
+            // 5. Return the new shortened URL back to Vue.js
             var shortUrl = $"{Request.Scheme}://{Request.Host}/{shortCode}";
             return Ok(new { shortUrl = shortUrl });
         }
@@ -52,12 +56,22 @@ namespace UrlShortenerService.Controllers
         [HttpGet("{code}")]
         public async Task<IActionResult> RedirectToOriginal(string code)
         {
+            // Find the URL mapping in the database
             var mapping = await _context.UrlMappings.FirstOrDefaultAsync(u => u.ShortCode == code);
 
             if (mapping == null)
             {
                 return NotFound("Short URL not found.");
             }
+
+
+            // --- NEW CODE: Check if the link has expired ---
+            if (mapping.ExpiredDate.HasValue && mapping.ExpiredDate.Value < DateTime.UtcNow)
+            {
+                return BadRequest("This shortened URL has expired.");
+            }
+            // ----------------------------------------------
+
 
             // Perform the 302 Redirect to the original long URL
             return Redirect(mapping.OriginalUrl);

@@ -8,5 +8,8 @@ namespace UrlShortenerService.Data
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
 
         public DbSet<UrlMapping> UrlMappings { get; set; }
+
+        // ADD THIS: Tells the database to create a Users table
+        public DbSet<User> Users { get; set; }
     }
 }
