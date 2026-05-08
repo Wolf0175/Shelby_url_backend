@@ -16,7 +16,11 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowVueApp", policy =>
     {
-        policy.WithOrigins("http://localhost:8080")
+      
+        policy.WithOrigins(
+                "http://localhost:8080",
+                "https://shelby-ishe3g2m3-minhptqgcc230105-6549s-projects.vercel.app"
+            )
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
