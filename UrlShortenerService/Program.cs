@@ -19,7 +19,8 @@ builder.Services.AddCors(options =>
       
         policy.WithOrigins(
                 "http://localhost:8080",
-                "https://shelby-ishe3g2m3-minhptqgcc230105-6549s-projects.vercel.app"
+                "https://shelby-ishe3g2m3-minhptqgcc230105-6549s-projects.vercel.app",
+                "https://shelby-url.vercel.app"
             )
               .AllowAnyHeader()
               .AllowAnyMethod();
