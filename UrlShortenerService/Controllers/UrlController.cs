@@ -17,37 +17,34 @@ namespace UrlShortenerService.Controllers
             _context = context;
         }
 
-
         // GET: /api/url/my-links
         [HttpGet("api/url/my-links")]
         public async Task<IActionResult> GetMyLinks()
         {
-            // 1. Kiểm tra xem người dùng đã đăng nhập chưa (đọc từ Token)
             var userIdClaim = HttpContext.User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int loggedInUserId))
             {
                 return Unauthorized(new { message = "You must be logged in to view your links." });
             }
 
-            // 2. Tìm tất cả các link thuộc về User này, sắp xếp mới nhất lên đầu
-            var myLinks = await _context.UrlMappings
+            // 1. Fetch data from DB first (Without confusing the database with Request properties)
+            var myLinksData = await _context.UrlMappings
                 .Where(u => u.UserId == loggedInUserId)
                 .OrderByDescending(u => u.CreatedAt)
-                .Select(u => new
-                {
-                    u.Id,
-                    u.OriginalUrl,
-                    ShortUrl = $"{Request.Scheme}://{Request.Host}/{u.ShortCode}",
-                    u.CreatedAt,
-                    u.ExpiredDate
-                })
                 .ToListAsync();
 
-            // 3. Trả danh sách về cho Frontend
+            // 2. Format the URLs safely in server memory
+            var myLinks = myLinksData.Select(u => new
+            {
+                u.Id,
+                u.OriginalUrl,
+                ShortUrl = $"{Request.Scheme}://{Request.Host}/{u.ShortCode}",
+                u.CreatedAt,
+                u.ExpiredDate
+            });
+
             return Ok(myLinks);
         }
-
-
 
         // POST: /api/url/shorten
         [HttpPost("api/url/shorten")]
@@ -55,31 +52,25 @@ namespace UrlShortenerService.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            // 1. Generate a random 6-character short code
             var shortCode = GenerateShortCode(6);
 
-            // 2. Prepare the new mapping
             var urlMapping = new UrlMapping
             {
                 OriginalUrl = request.Url,
                 ShortCode = shortCode,
                 CreatedAt = DateTime.UtcNow,
-                // --- NEW CODE: Automatically set expiration to 30 days from now ---
                 ExpiredDate = DateTime.UtcNow.AddDays(30)
             };
 
-            // 3. Attach the User ID if they are logged in with a valid JWT Token
             var userIdClaim = HttpContext.User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int loggedInUserId))
             {
                 urlMapping.UserId = loggedInUserId;
             }
 
-            // 4. Save to Neon PostgreSQL database
             _context.UrlMappings.Add(urlMapping);
             await _context.SaveChangesAsync();
 
-            // 5. Return the new shortened URL back to Vue.js
             var shortUrl = $"{Request.Scheme}://{Request.Host}/{shortCode}";
             return Ok(new { shortUrl = shortUrl });
         }
@@ -88,7 +79,6 @@ namespace UrlShortenerService.Controllers
         [HttpGet("{code}")]
         public async Task<IActionResult> RedirectToOriginal(string code)
         {
-            // Find the URL mapping in the database
             var mapping = await _context.UrlMappings.FirstOrDefaultAsync(u => u.ShortCode == code);
 
             if (mapping == null)
@@ -96,20 +86,14 @@ namespace UrlShortenerService.Controllers
                 return NotFound("Short URL not found.");
             }
 
-
-            // --- NEW CODE: Check if the link has expired ---
             if (mapping.ExpiredDate.HasValue && mapping.ExpiredDate.Value < DateTime.UtcNow)
             {
                 return BadRequest("This shortened URL has expired.");
             }
-            // ----------------------------------------------
 
-
-            // Perform the 302 Redirect to the original long URL
             return Redirect(mapping.OriginalUrl);
         }
 
-        // Helper method to generate random string
         private string GenerateShortCode(int length)
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
