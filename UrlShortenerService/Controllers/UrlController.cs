@@ -17,6 +17,38 @@ namespace UrlShortenerService.Controllers
             _context = context;
         }
 
+
+        // GET: /api/url/my-links
+        [HttpGet("api/url/my-links")]
+        public async Task<IActionResult> GetMyLinks()
+        {
+            // 1. Kiểm tra xem người dùng đã đăng nhập chưa (đọc từ Token)
+            var userIdClaim = HttpContext.User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int loggedInUserId))
+            {
+                return Unauthorized(new { message = "You must be logged in to view your links." });
+            }
+
+            // 2. Tìm tất cả các link thuộc về User này, sắp xếp mới nhất lên đầu
+            var myLinks = await _context.UrlMappings
+                .Where(u => u.UserId == loggedInUserId)
+                .OrderByDescending(u => u.CreatedAt)
+                .Select(u => new
+                {
+                    u.Id,
+                    u.OriginalUrl,
+                    ShortUrl = $"{Request.Scheme}://{Request.Host}/{u.ShortCode}",
+                    u.CreatedAt,
+                    u.ExpiredDate
+                })
+                .ToListAsync();
+
+            // 3. Trả danh sách về cho Frontend
+            return Ok(myLinks);
+        }
+
+
+
         // POST: /api/url/shorten
         [HttpPost("api/url/shorten")]
         public async Task<IActionResult> ShortenUrl([FromBody] UrlRequestDto request)
